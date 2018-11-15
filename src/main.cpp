@@ -2,104 +2,26 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266WiFiMulti.h>
 #include <ESP8266HTTPClient.h>
-
-#include <DHT.h>
+#include "ADS1115.h"
+#include "SHTSensor.h"
 
 // #define DEBUG_OFF
 #include "SerialHelper.h"
-ADC_MODE(ADC_TOUT_3V3);
 
-#define LED               2
-#define DHTTYPE           DHT22
-#define DHTPIN            13
-#define SOIL_HUMIDITY     12
-#define RAINDROP          14
-#define LIGHT_INTENSITY   16
+// ESP8266 work mode configuretion
+// ADC_MODE(ADC_TOUT_3V3);
 
-#define PM25_LED          5
-#define PM25              4
+#define API_BASE     String("http://gemdesign.cn/milk/dailylog.php")
 
+#define LED                  2
 
-//
-// == DHT sensor block
-//
-DHT dht;
+#define ADS1115_ALERT        15
 
-void setupDHT() {
-  dht.setup(DHTPIN);
-}
+#define PM25_LED             14
+// PM2.5 sample time mesured as micro second
+#define PM25_SAMPLE_TIME     280
+#define PM25_DELTA_TIME      40
 
-void readDHT() {
-  delay(dht.getMinimumSamplingPeriod());
-
-  float humidity = dht.getHumidity();
-  float temperature = dht.getTemperature();
-
-  sprint("DHT: ");
-  sprint(dht.getStatusString());
-  sprint("\t");
-  sprint(String(humidity));
-  sprint("\t\t");
-  sprint(String(temperature));
-  sprint("\t\t");
-  sprintln(String(dht.toFahrenheit(temperature)));
-}
-
-// END of DHT sensor block
-
-
-// == Soil Moisture block
-void setupSoilMoisture() {
-  pinMode(SOIL_HUMIDITY, INPUT);
-}
-
-void readSoilMoisture() {
-  int moisture = digitalRead(SOIL_HUMIDITY);
-  sprintln("Soil moisture: " + String(moisture));
-}
-// == END of soil moisture block
-
-// == Raindrop block
-
-void setupRaindrop() {
-  pinMode(RAINDROP, OUTPUT);
-  digitalWrite(RAINDROP, LOW);
-}
-
-int raindropAVG = 0;
-void readRaindrop() {
-  digitalWrite(RAINDROP, HIGH);
-  delay(10);
-  int dropA = analogRead(A0);
-  delay(10);
-  int dropB = analogRead(A0);
-
-  raindropAVG = dropA * 0.3 + dropB * 0.7;
-
-  sprintln("Raindrop: " + String(raindropAVG));
-  delay(300);  // Delay for test
-  digitalWrite(RAINDROP, LOW);
-}
-// == END of raindrop block
-
-// == Light Intensity block
-void setupLightIntensity() {
-  pinMode(LIGHT_INTENSITY, OUTPUT);
-  digitalWrite(LIGHT_INTENSITY, LOW);
-}
-
-void readLightIntensity() {
-  digitalWrite(LIGHT_INTENSITY, HIGH);
-  int a = analogRead(A0);
-  delay(50);
-  int b = analogRead(A0);
-  int light = a * 0.3 + b * 0.7;
-  sprintln("Light Intensity: " + String(light));
-  delay(300);  // Delay for test
-  digitalWrite(LIGHT_INTENSITY, LOW);
-}
-
-// == END of light sensor block
 
 // == WIFI setup block
 #define AP_NAME       "Gozi2016"
@@ -118,72 +40,228 @@ String ipFromInt(unsigned int ip) {
    return ipstr;
 }
 
+String ID;
+// Data report handle
+void report(String event, String data = "") {
+#ifndef NO_REPORT
+
+  HTTPClient http;
+
+  event.replace(" ", "%20");
+  data.replace(" ", "%20");
+
+  String request = API_BASE + "?id=" + ID + "&e=" + event + "&d=" + data;
+
+  http.begin(request);
+  http.GET();
+  http.end();
+
+#endif
+}
+
 ESP8266WiFiMulti WiFiMulti;
 
 void setupWIFI() {
-  int ledOn = 0;
 
-  WiFi.mode(WIFI_STA);
-  WiFiMulti.addAP(AP_NAME, PASSWORD);
-  // Wait for connection
-  sprintln("Connect to Wifi " + String(AP_NAME));
-  while ((WiFiMulti.run() != WL_CONNECTED)) {
-    ledOn = ledOn == 0 ? 1 : 0;
-    digitalWrite(LED, ledOn);
-    sprint(".");
-    delay(200);
-  }
-
-  String ID = WiFi.macAddress();
-  sprintln(" ");
-  sprintln("WIFI connect success");
-  sprintln(ipFromInt(WiFi.localIP()));
-  sprintln(ID);
 }
 
 // == END of WIFI setup block
 
+ADS1115 adc0(ADS1115_DEFAULT_ADDRESS);
+SHTSensor sht;
+
 void setup() {
 
-  pinMode(LED, OUTPUT);
-
   sbegin(115200);
+
+  pinMode(LED, OUTPUT);
+  pinMode(PM25_LED, OUTPUT);
+
+  digitalWrite(LED, LOW);
+  digitalWrite(PM25_LED, LOW);
 
   delay(100);
 
   // setupWIFI();
+  int ledOn = 0;
 
-  // setupDHT();
-  // setupSoilMoisture();
-  setupRaindrop();
-  setupLightIntensity();
+  WiFi.mode(WIFI_STA);
+  // WiFiMulti.addAP("Gozi2016", "pass4share");
+  WiFiMulti.addAP("ChinaNGB-wLxf5w", "KivikGiK");
+  // Wait for connection
+  sprintln("Connect to Wifi " + String(AP_NAME));
+  while ((WiFiMulti.run() != WL_CONNECTED)) {
 
+    ledOn = ledOn == 0 ? 1 : 0;
+    digitalWrite(LED, ledOn);
+    sprint(".");
+    delay(200);
+
+    yield();
+  }
+
+  ID = WiFi.macAddress();
+  sprintln(" ");
+  sprintln("WIFI connect success");
+  sprintln(ipFromInt(WiFi.localIP()));
+  sprintln(ID);
+
+  // Wait for wifi prepare
+  delay(100);
+
+  //I2Cdev::begin();  // join I2C bus
+  Wire.begin();
+
+  // Wait I2C prepare
+  delay(100);
+
+  sprintln("Testing device connections...");
+  sprintln(adc0.testConnection() ? "ADS1115 connection successful" : "ADS1115 connection failed");
+
+  adc0.initialize(); // initialize ADS1115 16 bit A/D chip
+
+  // We're going to do single shot sampling
+  adc0.setMode(ADS1115_MODE_SINGLESHOT);
+
+  // Slow things down so that we can see that the "poll for conversion" code works
+  adc0.setRate(ADS1115_RATE_860);
+
+  // Set the gain (PGA) +/- 6.144V
+  // Note that any analog input must be higher than –0.3V and less than VDD +0.3
+  adc0.setGain(ADS1115_PGA_2P048);
+  // ALERT/RDY pin will indicate when conversion is ready
+
+  // pinMode(ADS1115_ALERT, INPUT_PULLUP);
+  // adc0.setConversionReadyPinMode();
+
+  // To get output from this method, you'll need to turn on the
+  //#define ADS1115_SERIAL_DEBUG // in the ADS1115.h file
+  #ifdef ADS1115_SERIAL_DEBUG
+  adc0.showConfigRegister();
+  sprint("HighThreshold="); sprintln(adc0.getHighThreshold(),BIN);
+  sprint("LowThreshold="); sprintln(adc0.getLowThreshold(),BIN);
+  #endif
+
+  if (sht.init()) {
+    sprint("init(): success\n");
+  } else {
+    sprint("init(): failed\n");
+  }
+  sht.setAccuracy(SHTSensor::SHT_ACCURACY_MEDIUM); // only supported by SHT3x
+
+  report("ONLINE");
+}
+
+/** Poll the assigned pin for conversion status
+ */
+void pollAlertReadyPin() {
+  for (uint32_t i = 0; i<100000; i++)
+    if (!digitalRead(ADS1115_ALERT)) return;
+   sprintln("Failed to wait for AlertReadyPin, it's stuck high!");
 }
 
 int ledState = LOW;
+float dustDensity = 0;
 
 void loop() {
 
   ledState = ! ledState;
   digitalWrite(LED, ledState);
 
-  // readDHT();
+  // Read soil humidity
   //
-  // delay(1000);
-
-  // readSoilMoisture();
+  adc0.setMultiplexer(ADS1115_MUX_P0_NG);
+  adc0.triggerConversion();
+  int soilHumidity = adc0.getConversionP0GND();
+  sprint("A0: "); sprint(soilHumidity); sprint("mV\t");
+  report("Soil Humidity", String(soilHumidity));
   //
-  // delay(1000);
+  // === END of soil humidity
 
-  readRaindrop();
 
-  delay(1000);
-
-  readLightIntensity();
-
-  // int VVV = analogRead(A0);
+  // Read water level
   //
-  // sprintln("ADC Value: " + String(VVV));
+  // adc0.setMultiplexer(ADS1115_MUX_P1_NG);
+  // adc0.triggerConversion();
+  // sprint("A1: "); sprint(adc0.getConversionP1GND()); sprint("mV\t");
+  //
+  // === END of water level
 
-  delay(1000);
+
+  // Read PM2.5 sensor
+  //
+  int densityRead = 0;
+  float newDensity = 0;
+  digitalWrite(PM25_LED, HIGH);
+  delayMicroseconds(PM25_SAMPLE_TIME);
+  adc0.setMultiplexer(ADS1115_MUX_P2_NG);
+  adc0.triggerConversion();
+  densityRead = densityRead + adc0.getConversionP2GND();
+
+  delayMicroseconds(PM25_SAMPLE_TIME);
+  adc0.setMultiplexer(ADS1115_MUX_P2_NG);
+  adc0.triggerConversion();
+  densityRead = densityRead + adc0.getConversionP2GND();
+
+  delayMicroseconds(PM25_SAMPLE_TIME);
+  adc0.setMultiplexer(ADS1115_MUX_P2_NG);
+  adc0.triggerConversion();
+  densityRead = densityRead + adc0.getConversionP2GND();
+
+  delayMicroseconds(PM25_SAMPLE_TIME);
+  adc0.setMultiplexer(ADS1115_MUX_P2_NG);
+  adc0.triggerConversion();
+  densityRead = densityRead + adc0.getConversionP2GND();
+
+  delayMicroseconds(PM25_SAMPLE_TIME);
+  adc0.setMultiplexer(ADS1115_MUX_P2_NG);
+  adc0.triggerConversion();
+  densityRead = densityRead + adc0.getConversionP2GND();
+
+  newDensity = (densityRead / 5) * (3.3 / 32767);
+  dustDensity = dustDensity * 0.17 + newDensity * 0.83;
+  sprint("A2: ");
+  sprint(String(dustDensity * 1000) + " ug/m3");
+  sprint("\t");
+  delayMicroseconds(PM25_DELTA_TIME);
+  digitalWrite(PM25_LED, LOW);
+
+  float r = dustDensity * 1000;
+  report("PM25", String(r) + " ug/m3");
+  //
+  // === END of PM2.5 sensor
+
+  sprintln();
+
+
+  // SHT3x sensor
+  //
+  if (sht.readSample()) {
+    float humidity = sht.getHumidity();
+    sprint("SHT:\n");
+    sprint("  RH: ");
+    sprint(humidity);
+    sprint("\n");
+    float temperature = sht.getTemperature();
+    sprint("  T:  ");
+    sprint(temperature);
+    sprint("\n");
+
+    report("Humidity", String(humidity));
+    report("Temperature", String(temperature));
+  } else {
+    sprint("Error in readSample()\n");
+  }
+  //
+  // === END of SHT3x sensor
+
+  // adc0.setMultiplexer(ADS1115_MUX_P3_NG);
+  // adc0.triggerConversion();
+  // sprint("A3: "); sprint(adc0.getConversionP3GND()); sprint("mV > ");
+
+  sprintln();
+
+  delay(5 * 60 * 1000);
+  // delay(10000);
+
 }

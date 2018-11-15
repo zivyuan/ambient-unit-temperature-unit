@@ -1,13 +1,16 @@
 -I/Users/zivyuan/.platformio/packages/framework-arduinoespressif8266/tools/sdk/include
 -I/Users/zivyuan/.platformio/packages/framework-arduinoespressif8266/tools/sdk/libc/xtensa-lx106-elf/include
 -I/Users/zivyuan/.platformio/packages/framework-arduinoespressif8266/cores/esp8266
--I/Users/zivyuan/.platformio/packages/framework-arduinoespressif8266/tools/sdk/lwip/include
+-I/Users/zivyuan/.platformio/packages/framework-arduinoespressif8266/tools/sdk/lwip2/include
 -I/Users/zivyuan/.platformio/packages/framework-arduinoespressif8266/variants/nodemcu
--I/Users/zivyuan/Documents/Gozi Lib/Enviroment Moniter/lib/DHT_ID1671
+-I/Users/zivyuan/Documents/Gozi Lib/Enviroment Moniter/.piolibdeps/I2Cdevlib-ADS1115_ID95
+-I/Users/zivyuan/.platformio/packages/framework-arduinoespressif8266/libraries/Wire
+-I/Users/zivyuan/Documents/Gozi Lib/Enviroment Moniter/.piolibdeps/I2Cdevlib-Core_ID11
+-I/Users/zivyuan/.platformio/lib/arduino-sht_ID2044
 -I/Users/zivyuan/.platformio/packages/framework-arduinoespressif8266/libraries/ESP8266HTTPClient/src
 -I/Users/zivyuan/.platformio/packages/framework-arduinoespressif8266/libraries/ESP8266WiFi/src
+-I/Users/zivyuan/Documents/Gozi Lib/Enviroment Moniter/lib/Adafruit_ADS1X15
 -I/Users/zivyuan/Documents/Gozi Lib/Enviroment Moniter/.piolibdeps/DHT_ID1671
--I/Users/zivyuan/.platformio/lib/DHT_ID1671
 -I/Users/zivyuan/.platformio/packages/framework-arduinoespressif8266/libraries/ArduinoOTA
 -I/Users/zivyuan/.platformio/packages/framework-arduinoespressif8266/libraries/DNSServer/src
 -I/Users/zivyuan/.platformio/packages/framework-arduinoespressif8266/libraries/EEPROM
@@ -30,7 +33,6 @@
 -I/Users/zivyuan/.platformio/packages/framework-arduinoespressif8266/libraries/SoftwareSerial
 -I/Users/zivyuan/.platformio/packages/framework-arduinoespressif8266/libraries/TFT_Touch_Shield_V2
 -I/Users/zivyuan/.platformio/packages/framework-arduinoespressif8266/libraries/Ticker
--I/Users/zivyuan/.platformio/packages/framework-arduinoespressif8266/libraries/Wire
 -I/Users/zivyuan/.platformio/packages/framework-arduinoespressif8266/libraries/esp8266/src
 -I/Users/zivyuan/.platformio/packages/toolchain-xtensa/xtensa-lx106-elf/include
 -I/Users/zivyuan/.platformio/packages/toolchain-xtensa/xtensa-lx106-elf/include/c++/4.8.2
@@ -50,4 +52,5 @@
 -DARDUINO=10805
 -DARDUINO_BOARD="PLATFORMIO_ESP12E"
 -DLWIP_OPEN_SRC
+-DTCP_MSS=536
 -DVTABLES_IN_FLASH
