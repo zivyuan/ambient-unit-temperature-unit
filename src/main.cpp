@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
-#include <ESP8266WiFiMulti.h>
+// #include <ESP8266WiFiMulti.h>
 #include <ESP8266HTTPClient.h>
 #include "ADS1115.h"
 #include "SHTSensor.h"
@@ -59,7 +59,7 @@ void report(String event, String data = "") {
 #endif
 }
 
-ESP8266WiFiMulti WiFiMulti;
+// ESP8266WiFiMulti WiFiMulti;
 
 void setupWIFI() {
 
@@ -86,19 +86,29 @@ void setup() {
   int ledOn = 0;
 
   WiFi.mode(WIFI_STA);
+  WiFi.begin("Gozi2016", "pass4share");
+
+ while (WiFi.status() != WL_CONNECTED) {
+   delay(500);
+   Serial.print(".");
+   ledOn = ledOn == 0 ? 1 : 0;
+   digitalWrite(LED, ledOn);
+   sprint(".");
+ }
+
   // WiFiMulti.addAP("Gozi2016", "pass4share");
-  WiFiMulti.addAP("ChinaNGB-wLxf5w", "KivikGiK");
-  // Wait for connection
-  sprintln("Connect to Wifi " + String(AP_NAME));
-  while ((WiFiMulti.run() != WL_CONNECTED)) {
-
-    ledOn = ledOn == 0 ? 1 : 0;
-    digitalWrite(LED, ledOn);
-    sprint(".");
-    delay(200);
-
-    yield();
-  }
+  // WiFiMulti.addAP("ChinaNGB-wLxf5w", "KivikGiK");
+  // // Wait for connection
+  // sprintln("Connect to Wifi " + String(AP_NAME));
+  // while ((WiFiMulti.run() != WL_CONNECTED)) {
+  //
+  //   ledOn = ledOn == 0 ? 1 : 0;
+  //   digitalWrite(LED, ledOn);
+  //   sprint(".");
+  //   delay(200);
+  //
+  //   yield();
+  // }
 
   ID = WiFi.macAddress();
   sprintln(" ");
@@ -150,6 +160,8 @@ void setup() {
   sht.setAccuracy(SHTSensor::SHT_ACCURACY_MEDIUM); // only supported by SHT3x
 
   report("ONLINE");
+
+  delay(500);
 }
 
 /** Poll the assigned pin for conversion status
@@ -165,18 +177,23 @@ float dustDensity = 0;
 
 void loop() {
 
-  ledState = ! ledState;
-  digitalWrite(LED, ledState);
+  // ledState = ! ledState;
+  // digitalWrite(LED, ledState);
 
   // Read soil humidity
   //
   adc0.setMultiplexer(ADS1115_MUX_P0_NG);
   adc0.triggerConversion();
   int soilHumidity = adc0.getConversionP0GND();
-  sprint("A0: "); sprint(soilHumidity); sprint("mV\t");
-  report("Soil Humidity", String(soilHumidity));
+  float shum = (soilHumidity / 32767) * 10000;
+  sprint("Soil Humidity: ");
+  sprint(soilHumidity);
+  sprintln(" mV\t" + String(shum) + "%");
+  report("Soil Humidity", String(shum));
   //
   // === END of soil humidity
+
+  delay(5);
 
 
   // Read water level
@@ -220,18 +237,17 @@ void loop() {
 
   newDensity = (densityRead / 5) * (3.3 / 32767);
   dustDensity = dustDensity * 0.17 + newDensity * 0.83;
-  sprint("A2: ");
-  sprint(String(dustDensity * 1000) + " ug/m3");
-  sprint("\t");
+  float pm25 = dustDensity * 1000;
+  sprint("PM25: ");
+  sprintln(String(pm25) + " ug/m3");
   delayMicroseconds(PM25_DELTA_TIME);
   digitalWrite(PM25_LED, LOW);
 
-  float r = dustDensity * 1000;
-  report("PM25", String(r) + " ug/m3");
+  report("PM25", String(pm25) + " ug/m3");
   //
   // === END of PM2.5 sensor
 
-  sprintln();
+  delay(5);
 
 
   // SHT3x sensor
@@ -261,7 +277,7 @@ void loop() {
 
   sprintln();
 
-  delay(5 * 60 * 1000);
+  delay(10 * 60 * 1000);
   // delay(10000);
 
 }
