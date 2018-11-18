@@ -27,6 +27,20 @@
 #define AP_NAME       "Gozi2016"
 #define PASSWORD      "pass4share"
 
+// #define NO_REPORT      1
+
+#ifdef NO_REPORT
+
+// Report interval 10 minute
+#define REPORT_INTERVAL        5000
+
+#else
+
+// Report interval 10 minute
+#define REPORT_INTERVAL        600000
+
+#endif
+
 /**
  * Convert IP from int
  */
@@ -59,13 +73,6 @@ void report(String event, String data = "") {
 #endif
 }
 
-// ESP8266WiFiMulti WiFiMulti;
-
-void setupWIFI() {
-
-}
-
-// == END of WIFI setup block
 
 ADS1115 adc0(ADS1115_DEFAULT_ADDRESS);
 SHTSensor sht;
@@ -87,28 +94,15 @@ void setup() {
 
   WiFi.mode(WIFI_STA);
   WiFi.begin("Gozi2016", "pass4share");
+  // WiFi.begin("ChinaNGB-wLxf5w", "KivikGiK");
 
- while (WiFi.status() != WL_CONNECTED) {
-   delay(500);
-   Serial.print(".");
-   ledOn = ledOn == 0 ? 1 : 0;
-   digitalWrite(LED, ledOn);
-   sprint(".");
- }
-
-  // WiFiMulti.addAP("Gozi2016", "pass4share");
-  // WiFiMulti.addAP("ChinaNGB-wLxf5w", "KivikGiK");
-  // // Wait for connection
-  // sprintln("Connect to Wifi " + String(AP_NAME));
-  // while ((WiFiMulti.run() != WL_CONNECTED)) {
-  //
-  //   ledOn = ledOn == 0 ? 1 : 0;
-  //   digitalWrite(LED, ledOn);
-  //   sprint(".");
-  //   delay(200);
-  //
-  //   yield();
-  // }
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+    ledOn = ledOn == 0 ? 1 : 0;
+    digitalWrite(LED, ledOn);
+    sprint(".");
+  }
 
   ID = WiFi.macAddress();
   sprintln(" ");
@@ -159,9 +153,14 @@ void setup() {
   }
   sht.setAccuracy(SHTSensor::SHT_ACCURACY_MEDIUM); // only supported by SHT3x
 
-  report("ONLINE");
+  report("ENV Monitor ONLINE");
 
   delay(500);
+
+
+  digitalWrite(LED, LOW);
+  delay(2000);
+  digitalWrite(LED, HIGH);
 }
 
 /** Poll the assigned pin for conversion status
@@ -172,6 +171,17 @@ void pollAlertReadyPin() {
    sprintln("Failed to wait for AlertReadyPin, it's stuck high!");
 }
 
+int readPM25() {
+  digitalWrite(PM25_LED, HIGH);
+  delayMicroseconds(PM25_SAMPLE_TIME);
+  adc0.setMultiplexer(ADS1115_MUX_P2_NG);
+  adc0.triggerConversion();
+  int data = adc0.getConversionP2GND();
+  digitalWrite(PM25_LED, LOW);
+
+  return data;
+}
+
 int ledState = LOW;
 float dustDensity = 0;
 
@@ -179,16 +189,16 @@ void loop() {
 
   // ledState = ! ledState;
   // digitalWrite(LED, ledState);
+  digitalWrite(LED, LOW);
 
   // Read soil humidity
   //
   adc0.setMultiplexer(ADS1115_MUX_P0_NG);
   adc0.triggerConversion();
-  int soilHumidity = adc0.getConversionP0GND();
-  float shum = (soilHumidity / 32767) * 10000;
+  float soilHumidity = (float)adc0.getConversionP0GND();
+  float shum = (1 - soilHumidity / 32767.0) * 100.0;
   sprint("Soil Humidity: ");
-  sprint(soilHumidity);
-  sprintln(" mV\t" + String(shum) + "%");
+  sprintln(String(shum) + "%");
   report("Soil Humidity", String(shum));
   //
   // === END of soil humidity
@@ -198,9 +208,14 @@ void loop() {
 
   // Read water level
   //
-  // adc0.setMultiplexer(ADS1115_MUX_P1_NG);
-  // adc0.triggerConversion();
-  // sprint("A1: "); sprint(adc0.getConversionP1GND()); sprint("mV\t");
+  adc0.setMultiplexer(ADS1115_MUX_P1_NG);
+  adc0.triggerConversion();
+  float rainv = (float)adc0.getConversionP1GND();
+  float rain = (rainv / 32767.0) * 100.0;
+  sprint("Raining: ");
+  sprint(rain);
+  sprintln("%");
+  report("Raining Level", String(rain));
   //
   // === END of water level
 
@@ -209,40 +224,21 @@ void loop() {
   //
   int densityRead = 0;
   float newDensity = 0;
-  digitalWrite(PM25_LED, HIGH);
-  delayMicroseconds(PM25_SAMPLE_TIME);
-  adc0.setMultiplexer(ADS1115_MUX_P2_NG);
-  adc0.triggerConversion();
-  densityRead = densityRead + adc0.getConversionP2GND();
-
-  delayMicroseconds(PM25_SAMPLE_TIME);
-  adc0.setMultiplexer(ADS1115_MUX_P2_NG);
-  adc0.triggerConversion();
-  densityRead = densityRead + adc0.getConversionP2GND();
-
-  delayMicroseconds(PM25_SAMPLE_TIME);
-  adc0.setMultiplexer(ADS1115_MUX_P2_NG);
-  adc0.triggerConversion();
-  densityRead = densityRead + adc0.getConversionP2GND();
-
-  delayMicroseconds(PM25_SAMPLE_TIME);
-  adc0.setMultiplexer(ADS1115_MUX_P2_NG);
-  adc0.triggerConversion();
-  densityRead = densityRead + adc0.getConversionP2GND();
-
-  delayMicroseconds(PM25_SAMPLE_TIME);
-  adc0.setMultiplexer(ADS1115_MUX_P2_NG);
-  adc0.triggerConversion();
-  densityRead = densityRead + adc0.getConversionP2GND();
+  densityRead += readPM25();
+  delay(1);
+  densityRead += readPM25();
+  delay(1);
+  densityRead += readPM25();
+  delay(1);
+  densityRead += readPM25();
+  delay(1);
+  densityRead += readPM25();
 
   newDensity = (densityRead / 5) * (3.3 / 32767);
   dustDensity = dustDensity * 0.17 + newDensity * 0.83;
   float pm25 = dustDensity * 1000;
   sprint("PM25: ");
   sprintln(String(pm25) + " ug/m3");
-  delayMicroseconds(PM25_DELTA_TIME);
-  digitalWrite(PM25_LED, LOW);
-
   report("PM25", String(pm25) + " ug/m3");
   //
   // === END of PM2.5 sensor
@@ -271,13 +267,10 @@ void loop() {
   //
   // === END of SHT3x sensor
 
-  // adc0.setMultiplexer(ADS1115_MUX_P3_NG);
-  // adc0.triggerConversion();
-  // sprint("A3: "); sprint(adc0.getConversionP3GND()); sprint("mV > ");
-
   sprintln();
 
-  delay(10 * 60 * 1000);
-  // delay(10000);
+  digitalWrite(LED, HIGH);
+
+  delay(REPORT_INTERVAL);
 
 }
