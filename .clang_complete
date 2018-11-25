@@ -4,8 +4,8 @@
 -I/Users/zivyuan/.platformio/packages/framework-arduinoespressif8266/tools/sdk/lwip2/include
 -I/Users/zivyuan/.platformio/packages/framework-arduinoespressif8266/variants/nodemcu
 -I/Users/zivyuan/Documents/Gozi Lib/Enviroment Moniter/.piolibdeps/I2Cdevlib-ADS1115_ID95
--I/Users/zivyuan/.platformio/packages/framework-arduinoespressif8266/libraries/Wire
 -I/Users/zivyuan/Documents/Gozi Lib/Enviroment Moniter/.piolibdeps/I2Cdevlib-Core_ID11
+-I/Users/zivyuan/.platformio/packages/framework-arduinoespressif8266/libraries/Wire
 -I/Users/zivyuan/.platformio/lib/arduino-sht_ID2044
 -I/Users/zivyuan/.platformio/packages/framework-arduinoespressif8266/libraries/ESP8266HTTPClient/src
 -I/Users/zivyuan/.platformio/packages/framework-arduinoespressif8266/libraries/ESP8266WiFi/src

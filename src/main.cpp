@@ -196,12 +196,14 @@ void loop() {
   adc0.setMultiplexer(ADS1115_MUX_P0_NG);
   adc0.triggerConversion();
   float soilHumidity = (float)adc0.getConversionP0GND();
-  float shum = (1 - soilHumidity / 32767.0) * 100.0;
+  float shum = (soilHumidity / 32767.0) * 100.0;
+  shum = shum > 100 ? 100 : 0;
   sprint("Soil Humidity: ");
   sprintln(String(shum) + "%");
   report("Soil Humidity", String(shum));
   //
   // === END of soil humidity
+
 
   delay(5);
 
@@ -212,6 +214,7 @@ void loop() {
   adc0.triggerConversion();
   float rainv = (float)adc0.getConversionP1GND();
   float rain = (rainv / 32767.0) * 100.0;
+  rain = rain > 100 ? 100 : 0;
   sprint("Raining: ");
   sprint(rain);
   sprintln("%");
