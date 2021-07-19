@@ -6,12 +6,14 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
-#define DEBUG 1
+// #define DEBUG 1
 
-#define MINIUTE_IN_US (60 * 1000 * 1000)
+#define MINIUTE_IN_US 60000000
 #define PIN_POWER 12
 
 /* 连接您的WIFI SSID和密码 */
+// #define WIFI_SSID "ChinaNGB-wLxf5w"
+// #define WIFI_PASSWD "KivikGiK"
 #define WIFI_SSID "Gozi2016"
 #define WIFI_PASSWD "pass4share"
 
@@ -35,12 +37,12 @@
 #define ALINK_TOPIC_PROP_POST "/sys/" PRODUCT_KEY "/" DEVICE_NAME "/thing/event/property/post"
 
 #define REPORT_DATA "{\"CurrentTemperature\":%f,\"CurrentHumidity\":%f,\"PM25\":%f}"
-#define REPORT_INTERVAL (0.5 * MINIUTE_IN_US)
+#define REPORT_INTERVAL (10 * MINIUTE_IN_US)
 
 // #define DEBUG_OFF
 #include "SerialHelper.h"
 
-#define PM25_LED 3
+#define PM25_LED     14
 
 // PM2.5 sample time mesured as micro second
 #define PM25_SAMPLE_TIME 280
@@ -54,13 +56,16 @@ ADS1115 adc0(ADS1115_ADDRESS);
 SHTSensor sht3x = SHTSensor::SHT3X;
 
 uint32_t lastMs = 0;
+float dustDensity = 0;
+bool wifi_connected = 0;
+bool mqtt_connected = 0;
 
-void blink()
+void blink(int h = 250, int l = 250)
 {
   digitalWrite(LED_BUILTIN, HIGH);
-  delay(300);
+  delay(h);
   digitalWrite(LED_BUILTIN, LOW);
-  delay(200);
+  delay(l);
 }
 
 int readPM25FromAdc()
@@ -82,7 +87,6 @@ float_t readPM25()
 {
   int densityRead = 0;
   float newDensity = 0;
-  float dustDensity = 0;
   densityRead += readPM25FromAdc();
   delay(1);
   densityRead += readPM25FromAdc();
@@ -95,7 +99,7 @@ float_t readPM25()
 
   newDensity = (densityRead / 5) * (3.3 / 32767);
   dustDensity = dustDensity * 0.17 + newDensity * 0.83;
-  float_t pm25 = dustDensity; // * 1000;
+  float_t pm25 = dustDensity * 1000;
   sprint("PM25: ");
   sprintln(String(pm25) + " ug/m3");
 
@@ -118,33 +122,46 @@ void wifiInit()
 {
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWD); //连接WiFi
-  while (WiFi.status() != WL_CONNECTED)
-  {
-    delay(1000);
-    Serial.println("Waiting WiFi connect...");
-  }
-  Serial.println("Connected to AP");
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
-  pubClient.setServer(MQTT_SERVER, MQTT_PORT); /* 连接WiFi之后，连接MQTT服务器 */
-  pubClient.setCallback(callback);
+  // int count = 0;
+  // while (WiFi.status() != WL_CONNECTED)
+  // {
+  //   delay(1000);
+  //   Serial.println("Waiting WiFi connect...");
+  //   count ++;
+  //   if (count > 30) {
+  //     // WiFi 连接失败后休眠重试
+  //     uint64_t sleepTime = 1 * MINIUTE_IN_US;
+  //     Serial.println("deep sleep start...");
+  //     ESP.deepSleep(sleepTime); // uint64_t time_us
+  //   }
+  // }
+  // Serial.println("Connected to AP");
+  // Serial.print("IP address: ");
+  // Serial.println(WiFi.localIP());
+
+  // pubClient.setServer(MQTT_SERVER, MQTT_PORT); /* 连接WiFi之后，连接MQTT服务器 */
+  // pubClient.setCallback(callback);
 }
 
 void mqttCheckConnect()
 {
+  int count = 0;
   while (!pubClient.connected())
   {
     Serial.println("Connecting to MQTT Server ...");
     if (pubClient.connect(CLIENT_ID, MQTT_USRNAME, MQTT_PASSWD))
-
     {
-
       Serial.println("MQTT Connected!");
     }
     else
     {
       Serial.print("MQTT Connect err:");
       Serial.println(pubClient.state());
+      count++;
+      if (count >= 10) {
+        return;
+      }
+
       delay(5000);
     }
   }
@@ -198,6 +215,7 @@ void setup()
   pinMode(PM25_LED, OUTPUT);
 
   digitalWrite(LED_BUILTIN, LOW);
+  digitalWrite(PIN_POWER, LOW);
   digitalWrite(PM25_LED, LOW);
 
   delay(100);
@@ -210,33 +228,81 @@ void setup()
   delay(500);
 
   sht3x.init();
+  pubClient.setBufferSize(256);
+  pubClient.setKeepAlive(30);
 
   blink();
 }
 
-int ledState = LOW;
-float dustDensity = 0;
-
 void loop()
 {
+  if (WiFi.status() != WL_CONNECTED) {
+    wifi_connected = 0;
+    Serial.println("Waiting WiFi ...");
+
+    blink();
+    delay(500);
+    return;
+  }
+
+  if (!wifi_connected) {
+    wifi_connected = 1;
+
+    Serial.println("Connected to AP");
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+
+    /* 连接WiFi之后，连接MQTT服务器 */
+    pubClient.setServer(MQTT_SERVER, MQTT_PORT);
+    pubClient.setCallback(callback);
+  }
+
+  if (!pubClient.connected()) {
+    mqtt_connected = 0;
+
+    blink();
+    blink();
+
+    Serial.println("Connecting to MQTT Server ...");
+    if (pubClient.connect(CLIENT_ID, MQTT_USRNAME, MQTT_PASSWD))
+    {
+      Serial.println("MQTT Connected!");
+    }
+    else
+    {
+      Serial.print("MQTT Connect err:");
+      Serial.println(pubClient.state());
+
+      delay(4000);
+      return;
+    }
+  }
+
+  if (!mqtt_connected) {
+    mqtt_connected = 1;
+  }
 
   Serial.println("Start report...");
-  digitalWrite(PIN_POWER, HIGH);
-  delay(100);
+
+  // Power control
+  // digitalWrite(PIN_POWER, HIGH);
+  // delay(1050); // Delay at least 1000ms for PM2.5 sensor
+
   mqttCheckConnect();
   /* 上报 */
   mqttIntervalPost();
-  //
-  digitalWrite(PIN_POWER, LOW);
 
   pubClient.loop();
-  // delay(15000);
 
-  // #if !defined(DEBUG)
-  // DeepSleep
-  // 设备睡眠间隔
-  uint64_t sleepTime = 10 * MINIUTE_IN_US;
-  Serial.println("deep sleep start...");
-  ESP.deepSleep(sleepTime); // uint64_t time_us
-  // #endif
+
+  #if defined(DEBUG)
+    Serial.println("Delay for next loop...");
+    delay(5 * MINIUTE_IN_US / 1000);
+  #else
+    // DeepSleep
+    // 设备睡眠间隔
+    uint64_t sleepTime = 5 * MINIUTE_IN_US;
+    Serial.println("deep sleep start...");
+    ESP.deepSleep(sleepTime); // uint64_t time_us
+  #endif
 }
