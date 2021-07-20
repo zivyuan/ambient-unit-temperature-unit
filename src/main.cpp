@@ -9,7 +9,7 @@
 // #define DEBUG 1
 
 #define MINIUTE_IN_US 60000000
-#define PIN_POWER 12
+#define PIN_POWER D7     // GPIO13
 
 /* 连接您的WIFI SSID和密码 */
 // #define WIFI_SSID "ChinaNGB-wLxf5w"
@@ -28,17 +28,18 @@
 #define MQTT_PORT 1883
 #define MQTT_USRNAME DEVICE_NAME "&" PRODUCT_KEY
 
-#define CLIENT_ID "SH123456|securemode=3,timestamp=36580,signmethod=hmacsha256|"
+#define CLIENT_ID "SH103456|securemode=3,timestamp=136580,signmethod=hmacsha256|"
 // 算法工具: http://iot-face.oss-cn-shanghai.aliyuncs.com/tools.htm 进行加密生成password
 // password教程 https://www.yuque.com/cloud-dev/iot-tech/mebm5g
-// clientIdSH123456deviceNameSweetHome901productKeya1Kj2P1kRYttimestamp36580
-#define MQTT_PASSWD "0a7a858f1f356472c9f03ff382b016e742a01b91d2923ed4783f0f680fa12f87"
+// clientIdSH103456deviceNameSweetHome901productKeya1Kj2P1kRYttimestamp136580
+#define MQTT_PASSWD "d737ad504a9ede7b002dc0a7bb681cba0e1d004360ed01ac36476e7e5a100fbb"
 
-#define ALINK_BODY_FORMAT "{\"id\":\"ESP8266\",\"version\":\"1.0\",\"method\":\"thing.event.property.post\",\"params\":%s}"
+#define ALINK_BODY_FORMAT "{\"id\":\"SH103456\",\"version\":\"1.0\",\"method\":\"thing.event.property.post\",\"params\":%s}"
 #define ALINK_TOPIC_PROP_POST "/sys/" PRODUCT_KEY "/" DEVICE_NAME "/thing/event/property/post"
 
 #define REPORT_DATA "{\"CurrentTemperature\":%f,\"CurrentHumidity\":%f,\"PM25\":%f}"
-#define REPORT_INTERVAL (10 * MINIUTE_IN_US)
+// Report interval, minute
+#define REPORT_INTERVAL 5
 
 // #define DEBUG_OFF
 #include "SerialHelper.h"
@@ -60,6 +61,10 @@ uint32_t lastMs = 0;
 float dustDensity = 0;
 bool wifi_connected = 0;
 bool mqtt_connected = 0;
+// Sensor data vars
+float temperature = 0.0;
+float humidity = 0.0;
+float pm25 = 0.0;
 
 void blink(int h = 250, int l = 250)
 {
@@ -101,8 +106,6 @@ float_t readPM25()
   newDensity = (densityRead / 5) * (3.3 / 32767);
   dustDensity = dustDensity * 0.17 + newDensity * 0.83;
   float_t pm25 = dustDensity * 1000;
-  sprint("PM25: ");
-  sprintln(String(pm25) + " ug/m3");
 
   return pm25;
 }
@@ -122,50 +125,32 @@ void callback(char *topic, byte *payload, unsigned int length)
 void wifiInit()
 {
   WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWD); //连接WiFi
-  // int count = 0;
-  // while (WiFi.status() != WL_CONNECTED)
-  // {
-  //   delay(1000);
-  //   Serial.println("Waiting WiFi connect...");
-  //   count ++;
-  //   if (count > 30) {
-  //     // WiFi 连接失败后休眠重试
-  //     uint64_t sleepTime = 1 * MINIUTE_IN_US;
-  //     Serial.println("deep sleep start...");
-  //     ESP.deepSleep(sleepTime); // uint64_t time_us
-  //   }
-  // }
-  // Serial.println("Connected to AP");
-  // Serial.print("IP address: ");
-  // Serial.println(WiFi.localIP());
-
-  // pubClient.setServer(MQTT_SERVER, MQTT_PORT); /* 连接WiFi之后，连接MQTT服务器 */
-  // pubClient.setCallback(callback);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWD);
 }
 
-void mqttCheckConnect()
-{
-  int count = 0;
-  while (!pubClient.connected())
+void readSensor() {
+  digitalWrite(PIN_POWER, HIGH);
+  delay(100);
+  // Read temperature & humidity
+  if (sht3x.readSample())
   {
-    Serial.println("Connecting to MQTT Server ...");
-    if (pubClient.connect(CLIENT_ID, MQTT_USRNAME, MQTT_PASSWD))
-    {
-      Serial.println("MQTT Connected!");
-    }
-    else
-    {
-      Serial.print("MQTT Connect err:");
-      Serial.println(pubClient.state());
-      count++;
-      if (count >= 10) {
-        return;
-      }
-
-      delay(5000);
-    }
+    Serial.print("Temperature: ");
+    temperature = sht3x.getTemperature();
+    Serial.println(temperature);
+    Serial.print("Humidity: ");
+    humidity = sht3x.getHumidity();
+    Serial.println(humidity);
+  } else {
+    Serial.println("Temp sensor not ready!");
   }
+  // Wait for pm2.5 sensor initial
+  delay(1000);
+  sprint("PM25: ");
+  pm25 = readPM25();
+  sprintln(String(pm25) + " ug/m3");
+
+  delay(50);
+  digitalWrite(PIN_POWER, LOW);
 }
 
 void mqttIntervalPost()
@@ -173,19 +158,6 @@ void mqttIntervalPost()
   char param[512];
   char jsonBuf[1024];
   boolean d;
-  float temperature = 0.0;
-  float humidity = 0.0;
-  float pm25 = 0.0;
-
-  // Read temperature & humidity
-  if (sht3x.readSample())
-  {
-    temperature = sht3x.getTemperature();
-    humidity = sht3x.getHumidity();
-  }
-
-  //
-  pm25 = readPM25();
 
   sprintf(param, REPORT_DATA, temperature, humidity, pm25);
   sprintf(jsonBuf, ALINK_BODY_FORMAT, param);
@@ -258,6 +230,8 @@ void loop()
     pubClient.setCallback(callback);
   }
 
+  readSensor();
+
   if (!pubClient.connected()) {
     mqtt_connected = 0;
 
@@ -284,12 +258,7 @@ void loop()
   }
 
   Serial.println("Start report...");
-
-  // Power control
-  // digitalWrite(PIN_POWER, HIGH);
-  // delay(1050); // Delay at least 1000ms for PM2.5 sensor
-
-  mqttCheckConnect();
+  // mqttCheckConnect();
   /* 上报 */
   mqttIntervalPost();
 
@@ -302,7 +271,7 @@ void loop()
   #else
     // DeepSleep
     // 设备睡眠间隔
-    uint64_t sleepTime = 5 * MINIUTE_IN_US;
+    uint64_t sleepTime = REPORT_INTERVAL * MINIUTE_IN_US;
     Serial.println("deep sleep start...");
     ESP.deepSleep(sleepTime); // uint64_t time_us
   #endif
