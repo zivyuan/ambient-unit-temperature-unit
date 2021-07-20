@@ -19,8 +19,8 @@
 
 /* 设备的三元组信息*/
 #define PRODUCT_KEY "a1Kj2P1kRYt"
-#define DEVICE_NAME "home-env-temp"
-#define DEVICE_SECRET "524e7c57abad5081ae902b6130e8c5bc"
+#define DEVICE_NAME "SweetHome901"
+#define DEVICE_SECRET "4d03a5cf080e8f48efe5d6e160796d61"
 #define REGION_ID "cn-shanghai"
 
 /* 线上环境域名和端口号，不需要改 */
@@ -28,10 +28,11 @@
 #define MQTT_PORT 1883
 #define MQTT_USRNAME DEVICE_NAME "&" PRODUCT_KEY
 
-#define CLIENT_ID "ESP8266|securemode=3,timestamp=1234567890,signmethod=hmacsha1|"
+#define CLIENT_ID "SH123456|securemode=3,timestamp=36580,signmethod=hmacsha256|"
 // 算法工具: http://iot-face.oss-cn-shanghai.aliyuncs.com/tools.htm 进行加密生成password
 // password教程 https://www.yuque.com/cloud-dev/iot-tech/mebm5g
-#define MQTT_PASSWD "ce6a1eb42c255f12d537b8e9c5d0075edb35c551"
+// clientIdSH123456deviceNameSweetHome901productKeya1Kj2P1kRYttimestamp36580
+#define MQTT_PASSWD "0a7a858f1f356472c9f03ff382b016e742a01b91d2923ed4783f0f680fa12f87"
 
 #define ALINK_BODY_FORMAT "{\"id\":\"ESP8266\",\"version\":\"1.0\",\"method\":\"thing.event.property.post\",\"params\":%s}"
 #define ALINK_TOPIC_PROP_POST "/sys/" PRODUCT_KEY "/" DEVICE_NAME "/thing/event/property/post"
