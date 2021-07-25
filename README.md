@@ -1,5 +1,14 @@
 # 温湿度监控
 
+## ADS1115 地址选择
+| Wire | Address |
+| - | - |
+| GND | 0x48 |
+| VCC | 0x49 |
+| SDA | 0x4A |
+| SCL | 0x4B |
+
+
 ## MQTT 资源
 1. [ESP8366 接入阿里云IoT](https://developer.aliyun.com/article/761838)
 2. [MQTT TCP连接](https://help.aliyun.com/document_detail/73742.html)

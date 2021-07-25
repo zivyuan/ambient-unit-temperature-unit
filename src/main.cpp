@@ -5,11 +5,25 @@
 #include <SHTSensor.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
+#include <Adafruit_SSD1306.h>
+#include <EEPROM.h>
+#include <NTPClient.h>
+#include <WiFiUdp.h>
 
 // #define DEBUG 1
 
-#define MINIUTE_IN_US 60000000
-#define PIN_POWER D7     // GPIO13
+#define LED_OFF        HIGH
+#define LED_ON         LOW
+
+#define EADDR_TEMPERATURE   0   // Size 4
+#define EADDR_HUMIDITY      4   // Size 4
+#define EADDR_PM25          8   // Size 4
+
+#define MINIUTE_IN_US     60000000
+#define PIN_POWER         D7     // GPIO13
+#define PIN_DISPLAY_SDA   D6     // GPIO12
+#define PIN_DISPLAY_SCL   D5     // GPIO14
+#define PM25_LED          D3     // GPIO00
 
 /* 连接您的WIFI SSID和密码 */
 // #define WIFI_SSID "ChinaNGB-wLxf5w"
@@ -44,10 +58,12 @@
 // #define DEBUG_OFF
 #include "SerialHelper.h"
 
-#define PM25_LED     14
-
 // PM2.5 sample time mesured as micro second
 #define PM25_SAMPLE_TIME 280
+
+#define SCREEN_WIDTH     128
+#define SCREEN_HEIGHT    32
+#define ROW_MSG          24
 
 // Variable define
 
@@ -56,6 +72,10 @@ PubSubClient pubClient(espClient);
 
 ADS1115 adc0(ADS1115_ADDRESS);
 SHTSensor sht3x = SHTSensor::SHT3X;
+// TwoWire displayWire;
+Adafruit_SSD1306 display = Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire);
+WiFiUDP ntpUDP;
+NTPClient ntpClient(ntpUDP, 8 * 60 * 60);
 
 uint32_t lastMs = 0;
 float dustDensity = 0;
@@ -68,9 +88,9 @@ float pm25 = 0.0;
 
 void blink(int h = 250, int l = 250)
 {
-  digitalWrite(LED_BUILTIN, HIGH);
+  digitalWrite(LED_BUILTIN, LED_ON);
   delay(h);
-  digitalWrite(LED_BUILTIN, LOW);
+  digitalWrite(LED_BUILTIN, LED_OFF);
   delay(l);
 }
 
@@ -122,15 +142,12 @@ void callback(char *topic, byte *payload, unsigned int length)
   Serial.println((char *)payload);
 }
 
-void wifiInit()
-{
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWD);
-}
-
 void readSensor() {
   digitalWrite(PIN_POWER, HIGH);
+  // Switch I2C ports to data
+  Wire.begin(PIN_WIRE_SDA, PIN_WIRE_SCL);
   delay(100);
+
   // Read temperature & humidity
   if (sht3x.readSample())
   {
@@ -149,8 +166,12 @@ void readSensor() {
   pm25 = readPM25();
   sprintln(String(pm25) + " ug/m3");
 
-  delay(50);
+  // Switch I2C ports to display
+  Wire.begin(PIN_DISPLAY_SDA, PIN_DISPLAY_SCL);
+  delay(100);
+
   digitalWrite(PIN_POWER, LOW);
+
 }
 
 void mqttIntervalPost()
@@ -176,42 +197,121 @@ void mqttIntervalPost()
   }
 }
 
+// Load data from EEPROM
+void loadData() {
+  EEPROM.begin(12 + 1);
+
+  temperature = EEPROM.read(EADDR_TEMPERATURE);
+  humidity = EEPROM.read(EADDR_HUMIDITY);
+  pm25 = EEPROM.read(EADDR_PM25);
+
+  EEPROM.end();
+}
+
+void saveData() {
+  EEPROM.begin(12 + 1);
+
+  EEPROM.write(EADDR_TEMPERATURE, temperature);
+  EEPROM.write(EADDR_HUMIDITY, humidity);
+  EEPROM.write(EADDR_PM25, pm25);
+
+  EEPROM.end();
+}
+
+void displayData() {
+
+  char str[24];
+  sprintf(str, "T:%0.1f C", temperature);
+  Serial.println(str);
+  display.setCursor(0, 0);
+  display.print(str);
+  display.drawCircle(38, 1, 1, WHITE);
+
+  sprintf(str, "H:%0.1f%%", humidity);
+  Serial.println(str);
+  display.setCursor(64, 0);
+  display.print(str);
+
+  sprintf(str, "PM25: %0.1fug/m3", pm25);
+  Serial.println(str);
+  display.setCursor(0, 10);
+  display.print(str);
+
+}
+
 // Main code start here
 
 void setup()
 {
+  //
+  // For the reason of ADS1115 and SSD1306 module both have pull
+  // up resisters on SDA and SCL pins, and this is the reason to
+  // cause IIC comunication confused.
+  // To solve this problem, we need to switch IIC pins before
+  // transition. [Multiple I2C ports](https://github.com/esp8266/Arduino/issues/3063)
+  // In this project, switch pins to default when read sensor data
+  // then swith to display IIC pins.
+  // Other solution: [twowire i2c library don't work with multiple instance #7894](https://github.com/esp8266/Arduino/issues/7894)
+  //
+  // Initial wire as display communication
+  Wire.begin(PIN_DISPLAY_SDA, PIN_DISPLAY_SCL);
 
   sbegin(115200);
+
+  delay(100);
+
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.print("Display initial failed!");
+  }
+  display.clearDisplay();
+  display.setTextColor(WHITE);
+  display.setCursor(2, 10);
+  display.print("Initializing...");
+  display.display();
 
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(PIN_POWER, OUTPUT);
   pinMode(PM25_LED, OUTPUT);
 
-  digitalWrite(LED_BUILTIN, LOW);
+  digitalWrite(LED_BUILTIN, LED_OFF);
   digitalWrite(PIN_POWER, LOW);
   digitalWrite(PM25_LED, LOW);
 
   delay(100);
 
-  // join I2C bus
-  Wire.begin();
-
-  wifiInit();
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+  delay(100);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWD);
 
   delay(500);
 
   sht3x.init();
+
   pubClient.setBufferSize(256);
   pubClient.setKeepAlive(30);
+  pubClient.setServer(MQTT_SERVER, MQTT_PORT);
+  pubClient.setCallback(callback);
+
+  ntpClient.begin();
 
   blink();
 }
 
 void loop()
 {
+  char msg[128];
+  display.clearDisplay();
+
   if (WiFi.status() != WL_CONNECTED) {
     wifi_connected = 0;
-    Serial.println("Waiting WiFi ...");
+    sprintf(msg, "[%d] Connect WiFi...", WiFi.status());
+    Serial.println(msg);
+
+    display.setCursor(0, ROW_MSG);
+    display.print(msg);
+
+    display.display();
 
     blink();
     delay(500);
@@ -224,13 +324,23 @@ void loop()
     Serial.println("Connected to AP");
     Serial.print("IP address: ");
     Serial.println(WiFi.localIP());
-
-    /* 连接WiFi之后，连接MQTT服务器 */
-    pubClient.setServer(MQTT_SERVER, MQTT_PORT);
-    pubClient.setCallback(callback);
   }
 
+
+  display.fillRect(0, ROW_MSG, 128, 32, BLACK);
+  display.setCursor(0, ROW_MSG);
+  display.print("Reading data...");
+  display.display();
+
+  ntpClient.update();
+
   readSensor();
+
+  delay(50);
+
+  display.clearDisplay();
+
+  displayData();
 
   if (!pubClient.connected()) {
     mqtt_connected = 0;
@@ -239,14 +349,23 @@ void loop()
     blink();
 
     Serial.println("Connecting to MQTT Server ...");
+
+    display.setCursor(0, ROW_MSG);
+    display.print("Connect MQTT...");
+    display.display();
+
     if (pubClient.connect(CLIENT_ID, MQTT_USRNAME, MQTT_PASSWD))
     {
       Serial.println("MQTT Connected!");
     }
     else
     {
-      Serial.print("MQTT Connect err:");
-      Serial.println(pubClient.state());
+      sprintf(msg, "Connect MQTT err: %d", pubClient.state());
+      Serial.println(msg);
+      display.fillRect(0, ROW_MSG, 128, 32, BLACK);
+      display.setCursor(0, ROW_MSG);
+      display.print(msg);
+      display.display();
 
       delay(4000);
       return;
@@ -260,10 +379,23 @@ void loop()
   Serial.println("Start report...");
   // mqttCheckConnect();
   /* 上报 */
+  display.fillRect(0, ROW_MSG, 128, 32, BLACK);
+  display.setCursor(0, ROW_MSG);
+  display.print("Report data...");
+  display.display();
+
   mqttIntervalPost();
 
-  pubClient.loop();
+  delay(100);
 
+  display.fillRect(0, ROW_MSG, 128, 32, BLACK);
+  display.setCursor(0, ROW_MSG);
+  display.print(ntpClient.getFormattedTime());
+
+  display.display();
+
+  pubClient.disconnect();
+  WiFi.disconnect();
 
   #if defined(DEBUG)
     Serial.println("Delay for next loop...");
