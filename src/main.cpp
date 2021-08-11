@@ -7,8 +7,8 @@
 #include <ArduinoJson.h>
 #include <Adafruit_SSD1306.h>
 #include <EEPROM.h>
-#include <NTPClient.h>
-#include <WiFiUdp.h>
+// #include <NTPClient.h>
+// #include <WiFiUdp.h>
 
 // #define DEBUG 1
 
@@ -48,10 +48,11 @@
 // clientIdSH103456deviceNameSweetHome901productKeya1Kj2P1kRYttimestamp136580
 #define MQTT_PASSWD "d737ad504a9ede7b002dc0a7bb681cba0e1d004360ed01ac36476e7e5a100fbb"
 
-#define ALINK_BODY_FORMAT "{\"id\":\"SH103456\",\"version\":\"1.0\",\"method\":\"thing.event.property.post\",\"params\":%s}"
+#define ALINK_BODY_FORMAT "{\"id\":\"SH103456\",\"version\":\"1.0\",\"method\":\"thing.event.property.post\",\"params\":(%s)}"
 #define ALINK_TOPIC_PROP_POST "/sys/" PRODUCT_KEY "/" DEVICE_NAME "/thing/event/property/post"
 
-#define REPORT_DATA "{\"CurrentTemperature\":%f,\"CurrentHumidity\":%f,\"PM25\":%f}"
+#define REPORT_DATA_TEMP "\"CurrentTemperature\":%f,\"CurrentHumidity\":%f,"
+#define REPORT_DATA_PM25 "\"PM25\":%f,"
 // Report interval, minute
 #define REPORT_INTERVAL 5
 
@@ -65,6 +66,8 @@
 #define SCREEN_HEIGHT    32
 #define ROW_MSG          24
 
+
+
 // Variable define
 
 WiFiClient espClient;
@@ -74,171 +77,31 @@ ADS1115 adc0(ADS1115_ADDRESS);
 SHTSensor sht3x = SHTSensor::SHT3X;
 // TwoWire displayWire;
 Adafruit_SSD1306 display = Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire);
-WiFiUDP ntpUDP;
-NTPClient ntpClient(ntpUDP, 8 * 60 * 60);
+// WiFiUDP ntpUDP;
+// NTPClient ntpClient(ntpUDP, 8 * 60 * 60);
 
 uint32_t lastMs = 0;
 float dustDensity = 0;
 bool wifi_connected = 0;
 bool mqtt_connected = 0;
+unsigned long sessionTimeMark = millis();
 // Sensor data vars
 float temperature = 0.0;
 float humidity = 0.0;
 float pm25 = 0.0;
+bool tempReady = false;
 
-void blink(int h = 250, int l = 250)
-{
-  digitalWrite(LED_BUILTIN, LED_ON);
-  delay(h);
-  digitalWrite(LED_BUILTIN, LED_OFF);
-  delay(l);
-}
-
-int readPM25FromAdc()
-{
-  adc0.setGain(0);
-  delay(10);
-
-  digitalWrite(PM25_LED, HIGH);
-  delayMicroseconds(PM25_SAMPLE_TIME);
-
-  uint16_t data = adc0.readADC(0);
-
-  digitalWrite(PM25_LED, LOW);
-
-  return data;
-}
-
-float_t readPM25()
-{
-  int densityRead = 0;
-  float newDensity = 0;
-  densityRead += readPM25FromAdc();
-  delay(1);
-  densityRead += readPM25FromAdc();
-  delay(1);
-  densityRead += readPM25FromAdc();
-  delay(1);
-  densityRead += readPM25FromAdc();
-  delay(1);
-  densityRead += readPM25FromAdc();
-
-  newDensity = (densityRead / 5) * (3.3 / 32767);
-  dustDensity = dustDensity * 0.17 + newDensity * 0.83;
-  float_t pm25 = dustDensity * 1000;
-
-  return pm25;
-}
-
-//
-// MQTT Callback
-//
-void callback(char *topic, byte *payload, unsigned int length)
-{
-  Serial.print("Message arrived [");
-  Serial.print(topic);
-  Serial.print("] ");
-  payload[length] = '\0';
-  Serial.println((char *)payload);
-}
-
-void readSensor() {
-  digitalWrite(PIN_POWER, HIGH);
-  // Switch I2C ports to data
-  Wire.begin(PIN_WIRE_SDA, PIN_WIRE_SCL);
-  delay(100);
-
-  // Read temperature & humidity
-  if (sht3x.readSample())
-  {
-    Serial.print("Temperature: ");
-    temperature = sht3x.getTemperature();
-    Serial.println(temperature);
-    Serial.print("Humidity: ");
-    humidity = sht3x.getHumidity();
-    Serial.println(humidity);
-  } else {
-    Serial.println("Temp sensor not ready!");
-  }
-  // Wait for pm2.5 sensor initial
-  delay(1000);
-  sprint("PM25: ");
-  pm25 = readPM25();
-  sprintln(String(pm25) + " ug/m3");
-
-  // Switch I2C ports to display
-  Wire.begin(PIN_DISPLAY_SDA, PIN_DISPLAY_SCL);
-  delay(100);
-
-  digitalWrite(PIN_POWER, LOW);
-
-}
-
-void mqttIntervalPost()
-{
-  char param[512];
-  char jsonBuf[1024];
-  boolean d;
-
-  sprintf(param, REPORT_DATA, temperature, humidity, pm25);
-  sprintf(jsonBuf, ALINK_BODY_FORMAT, param);
-  Serial.print("Report: ");
-  Serial.println(jsonBuf);
-  // Demo:
-  // {"id":"ESP8266","version":"1.0","method":"thing.event.property.post","params":{"CurrentTemperature":27.870605,"CurrentHumidity":78.672462,"PM25":5.466966}}
-  d = pubClient.publish(ALINK_TOPIC_PROP_POST, jsonBuf);
-  if (d)
-  {
-    Serial.println("publish success");
-  }
-  else
-  {
-    Serial.println("publish fail");
-  }
-}
-
-// Load data from EEPROM
-void loadData() {
-  EEPROM.begin(12 + 1);
-
-  temperature = EEPROM.read(EADDR_TEMPERATURE);
-  humidity = EEPROM.read(EADDR_HUMIDITY);
-  pm25 = EEPROM.read(EADDR_PM25);
-
-  EEPROM.end();
-}
-
-void saveData() {
-  EEPROM.begin(12 + 1);
-
-  EEPROM.write(EADDR_TEMPERATURE, temperature);
-  EEPROM.write(EADDR_HUMIDITY, humidity);
-  EEPROM.write(EADDR_PM25, pm25);
-
-  EEPROM.end();
-}
-
-void displayData() {
-
-  char str[24];
-  sprintf(str, "T:%0.1f C", temperature);
-  Serial.println(str);
-  display.setCursor(0, 0);
-  display.print(str);
-  display.drawCircle(38, 1, 1, WHITE);
-
-  sprintf(str, "H:%0.1f%%", humidity);
-  Serial.println(str);
-  display.setCursor(64, 0);
-  display.print(str);
-
-  sprintf(str, "PM25: %0.1fug/m3", pm25);
-  Serial.println(str);
-  display.setCursor(0, 10);
-  display.print(str);
-
-}
-
+void blink();
+void blink(int h, int l);
+int readPM25FromAdc();
+float_t readPM25();
+void callback(char *topic, byte *payload, unsigned int length);
+void readSenser();
+void mqttIntervalPost();
+void loadData();
+void saveData();
+void displayData();
+void goDeepSleep();
 // Main code start here
 
 void setup()
@@ -293,7 +156,7 @@ void setup()
   pubClient.setServer(MQTT_SERVER, MQTT_PORT);
   pubClient.setCallback(callback);
 
-  ntpClient.begin();
+  // ntpClient.begin();
 
   blink();
 }
@@ -314,6 +177,13 @@ void loop()
     display.display();
 
     blink();
+
+
+    // 超过45秒连接失败直接睡眠
+    if ((millis() - sessionTimeMark) > 45000) {
+      goDeepSleep();
+    }
+
     delay(500);
     return;
   }
@@ -332,9 +202,9 @@ void loop()
   display.print("Reading data...");
   display.display();
 
-  ntpClient.update();
+  // ntpClient.update();
 
-  readSensor();
+  readSenser();
 
   delay(50);
 
@@ -367,6 +237,10 @@ void loop()
       display.print(msg);
       display.display();
 
+      // 超过1分钟连接失败直接睡眠
+      if ((millis() - sessionTimeMark) > 60000) {
+        goDeepSleep();
+      }
       delay(4000);
       return;
     }
@@ -389,11 +263,181 @@ void loop()
   delay(100);
 
   display.fillRect(0, ROW_MSG, 128, 32, BLACK);
-  display.setCursor(0, ROW_MSG);
-  display.print(ntpClient.getFormattedTime());
+  // display.setCursor(0, ROW_MSG);
+  // display.print(ntpClient.getFormattedTime());
 
   display.display();
 
+  goDeepSleep();
+}
+
+
+void blink() {
+  blink(250, 250);
+}
+
+void blink(int h, int l)
+{
+  digitalWrite(LED_BUILTIN, LED_ON);
+  delay(h);
+  digitalWrite(LED_BUILTIN, LED_OFF);
+  delay(l);
+}
+
+int readPM25FromAdc()
+{
+  adc0.setGain(0);
+  delay(10);
+
+  digitalWrite(PM25_LED, HIGH);
+  delayMicroseconds(PM25_SAMPLE_TIME);
+  uint16_t data = adc0.readADC(0);
+  digitalWrite(PM25_LED, LOW);
+
+  return data;
+}
+
+float_t readPM25()
+{
+  int densityRead = 0;
+  float newDensity = 0;
+  densityRead += readPM25FromAdc();
+  delay(1);
+  densityRead += readPM25FromAdc();
+  delay(1);
+  densityRead += readPM25FromAdc();
+  delay(1);
+  densityRead += readPM25FromAdc();
+  delay(1);
+  densityRead += readPM25FromAdc();
+
+  newDensity = (densityRead / 5) * (3.3 / 32767);
+  dustDensity = dustDensity * 0.17 + newDensity * 0.83;
+  float_t pm25 = dustDensity * 1000;
+
+  return pm25;
+}
+
+//
+// MQTT Callback
+//
+void callback(char *topic, byte *payload, unsigned int length)
+{
+  Serial.print("Message arrived [");
+  Serial.print(topic);
+  Serial.print("] ");
+  payload[length] = '\0';
+  Serial.println((char *)payload);
+}
+
+void readSenser() {
+  digitalWrite(PIN_POWER, HIGH);
+  // Switch I2C ports to data
+
+  Wire.begin(PIN_WIRE_SDA, PIN_WIRE_SCL);
+  delay(100);
+  // Read temperature & humidity
+  if (sht3x.readSample())
+  {
+    Serial.print("Temperature: ");
+    temperature = sht3x.getTemperature();
+    Serial.println(temperature);
+    Serial.print("Humidity: ");
+    humidity = sht3x.getHumidity();
+    Serial.println(humidity);
+    tempReady = true;
+  } else {
+    Serial.println("Temp sensor not ready!");
+    tempReady = false;
+  }
+  // Wait for pm2.5 sensor initial
+  delay(1000);
+  Serial.print("PM25: ");
+  pm25 = readPM25();
+  Serial.println(String(pm25) + " ug/m3");
+
+  // Switch I2C ports to display
+  Wire.begin(PIN_DISPLAY_SDA, PIN_DISPLAY_SCL);
+  delay(100);
+
+  digitalWrite(PIN_POWER, LOW);
+
+}
+
+void mqttIntervalPost()
+{
+  char dataTemp[128];
+  char dataPM25[32];
+  char jsonBuf[256];
+  String params = "";
+
+  if (tempReady) {
+    sprintf(dataTemp, REPORT_DATA_TEMP, temperature, humidity);
+    params += String(dataTemp);
+  }
+  sprintf(dataPM25, REPORT_DATA_PM25, pm25);
+  params += dataPM25;
+  params = params.substring(0, params.length() - 2);
+  sprintf(jsonBuf, ALINK_BODY_FORMAT, params.c_str());
+  Serial.print("Report: ");
+  Serial.println(jsonBuf);
+  // Demo:
+  // {"id":"ESP8266","version":"1.0","method":"thing.event.property.post","params":{"CurrentTemperature":27.870605,"CurrentHumidity":78.672462,"PM25":5.466966}}
+  boolean d;
+  d = pubClient.publish(ALINK_TOPIC_PROP_POST, jsonBuf);
+  if (d)
+  {
+    Serial.println("publish success");
+  }
+  else
+  {
+    Serial.println("publish fail");
+  }
+}
+
+// Load data from EEPROM
+void loadData() {
+  EEPROM.begin(12 + 1);
+
+  temperature = EEPROM.read(EADDR_TEMPERATURE);
+  humidity = EEPROM.read(EADDR_HUMIDITY);
+  pm25 = EEPROM.read(EADDR_PM25);
+
+  EEPROM.end();
+}
+
+void saveData() {
+  EEPROM.begin(12 + 1);
+
+  EEPROM.write(EADDR_TEMPERATURE, temperature);
+  EEPROM.write(EADDR_HUMIDITY, humidity);
+  EEPROM.write(EADDR_PM25, pm25);
+
+  EEPROM.end();
+}
+
+void displayData() {
+
+  char str[24];
+  sprintf(str, "T:%0.1f C", temperature);
+  Serial.println(str);
+  display.setCursor(0, 0);
+  display.print(str);
+  display.drawCircle(38, 1, 1, WHITE);
+
+  sprintf(str, "H:%0.1f%%", humidity);
+  Serial.println(str);
+  display.setCursor(64, 0);
+  display.print(str);
+
+  sprintf(str, "PM25: %0.1fug/m3", pm25);
+  Serial.println(str);
+  display.setCursor(0, 10);
+  display.print(str);
+
+}
+
+void goDeepSleep() {
   pubClient.disconnect();
   WiFi.disconnect();
 
@@ -408,3 +452,5 @@ void loop()
     ESP.deepSleep(sleepTime); // uint64_t time_us
   #endif
 }
+
+

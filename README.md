@@ -1,7 +1,7 @@
-# 温湿度监控
+# 迷你气象站
 
 ## ADS1115 地址选择
-| Wire | Address |
+| PIN | Address |
 | - | - |
 | GND | 0x48 |
 | VCC | 0x49 |
