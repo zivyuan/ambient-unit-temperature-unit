@@ -48,7 +48,7 @@
 // clientIdSH103456deviceNameSweetHome901productKeya1Kj2P1kRYttimestamp136580
 #define MQTT_PASSWD "d737ad504a9ede7b002dc0a7bb681cba0e1d004360ed01ac36476e7e5a100fbb"
 
-#define ALINK_BODY_FORMAT "{\"id\":\"SH103456\",\"version\":\"1.0\",\"method\":\"thing.event.property.post\",\"params\":(%s)}"
+#define ALINK_BODY_FORMAT "{\"id\":\"SH103456\",\"version\":\"1.0\",\"method\":\"thing.event.property.post\",\"params\":{%s}}"
 #define ALINK_TOPIC_PROP_POST "/sys/" PRODUCT_KEY "/" DEVICE_NAME "/thing/event/property/post"
 
 #define REPORT_DATA_TEMP "\"CurrentTemperature\":%f,\"CurrentHumidity\":%f,"
@@ -97,7 +97,7 @@ int readPM25FromAdc();
 float_t readPM25();
 void callback(char *topic, byte *payload, unsigned int length);
 void readSenser();
-void mqttIntervalPost();
+bool mqttIntervalPost();
 void loadData();
 void saveData();
 void displayData();
@@ -258,11 +258,23 @@ void loop()
   display.print("Report data...");
   display.display();
 
-  mqttIntervalPost();
+  bool rst = mqttIntervalPost();
+  display.fillRect(0, ROW_MSG, 128, 32, BLACK);
+  display.setCursor(0, ROW_MSG);
+  if (rst){
+    if (tempReady) {
+    display.print("All reported.");
+    } else {
+    display.print("PM2.5 reported.");
+    }
+  } else {
+    display.print("Report error.");
+  }
+  display.display();
 
   delay(100);
 
-  display.fillRect(0, ROW_MSG, 128, 32, BLACK);
+  // display.fillRect(0, ROW_MSG, 128, 32, BLACK);
   // display.setCursor(0, ROW_MSG);
   // display.print(ntpClient.getFormattedTime());
 
@@ -364,7 +376,7 @@ void readSenser() {
 
 }
 
-void mqttIntervalPost()
+bool mqttIntervalPost()
 {
   char dataTemp[128];
   char dataPM25[32];
@@ -388,10 +400,12 @@ void mqttIntervalPost()
   if (d)
   {
     Serial.println("publish success");
+    return true;
   }
   else
   {
     Serial.println("publish fail");
+    return false;
   }
 }
 

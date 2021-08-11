@@ -9,6 +9,21 @@
 | SCL | 0x4B |
 
 
+## 设备上代码上传
+
+使用FT232 USB转TTL进行数据上传
+
+1. 根据丝印连接好线
+2. 运行代码下载程序, 当界面提示正在连接时, 按下 Flash 键直接到上传开始后即可松开
+  2.1. 如果按下 Flash 键后还在等待连接, 这时可以按一下 Restart 键
+  2.2. 看到上传进度后可松开 Flash 键
+  ```
+  Serial port /dev/cu.usbserial-AH03AC2W
+  Connecting........
+  ```
+3. 代码上传结束, 如果需要使用串口调试的话, 需要把 RST 连线断开
+
+
 ## MQTT 资源
 1. [ESP8366 接入阿里云IoT](https://developer.aliyun.com/article/761838)
 2. [MQTT TCP连接](https://help.aliyun.com/document_detail/73742.html)
